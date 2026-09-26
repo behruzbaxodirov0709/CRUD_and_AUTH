@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from . import models
 import re
-from django.contrib.auth import get_user_model
+from rest_framework.authentication import authenticate
+from rest_framework.authtoken.models import Token
 
 
 
@@ -71,6 +72,13 @@ class SignUpSerializer(serializers.ModelSerializer):
                 }
             )
 
+        if models.CustomUser.objects.filter(phone_number=phone_number).exists():
+            raise serializers.ValidationError(
+                detail={
+                    "phone_number":"Bu raqam bilan avval ro'yxatdan o'tishgan!"
+                }
+            )
+        
         return phone_number
 
 
@@ -85,20 +93,56 @@ class SignUpSerializer(serializers.ModelSerializer):
         return password
 
 
+    def create(self, validated_data):
+        validated_data.pop("confirmation_password")
+        user = models.CustomUser.objects.create_user(**validated_data)
+        return user
+
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        return {
+            "message":"Ro'yxatdan muvaffaqiyatli o'tdingiz🎉",
+            "user":data
+        }
+    
 
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField()
     password = serializers.CharField(write_only=True)
 
+    def validate(self, attrs):
+        user = authenticate(username=attrs.get("username"), password=attrs.get("password"))
+
+        if user is None:
+            raise serializers.ValidationError("Username yoki password noto'g'ri!")
+
+        attrs["user"]=user
+
+        return attrs
 
 
+class ProfileSerializer(serializers.ModelSerializer):
+    # id = serializers.ReadOnlyField()
+    class Meta:
+        model = models.CustomUser
+        fields = ["id", "username", "first_name", "last_name", "phone_number"]
+
+    
 class ProfileUpdateSerializer(serializers.ModelSerializer):
     id = serializers.ReadOnlyField()
     class Meta:
         model = models.CustomUser
         fields = ["id", "username", "first_name", "last_name", "phone_number"]
 
-
+    def validate_phone_number(self, phone_number):
+        pattern = r"^\+998\d{9}$"
+        if phone_number and not re.match(pattern=pattern, string=phone_number):
+            raise serializers.ValidationError(
+                "Telefon raqami noto'g'ri formatda kiritildi. Masalan: +998901234567"
+            )
+        return phone_number
+    
 
 class PasswordChangeSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)
@@ -107,10 +151,17 @@ class PasswordChangeSerializer(serializers.Serializer):
 
 
     def validate(self, attrs):
+        if not attrs.get("new_password"):
+            raise serializers.ValidationError(
+                detail={
+                    "message":"Yangi parol bo'sh bo'lmasligi lozim!"
+                }
+            )
+
         if attrs.get("new_password") != attrs.get("confirmation_password"):
             raise serializers.ValidationError(
                 detail={
-                    "message":"Yangi parol va tasdiqlash paroli teng bo'lishi lozim!"
+                    "message":"Yangi parol va tasdiqlash paroli bir xil bo'lishi lozim!"
                 }
             )
 
@@ -146,6 +197,18 @@ class PasswordChangeSerializer(serializers.Serializer):
             )
 
         return new_password
+
+
+    def save(self, **kwargs):
+        user = self.context.get("request").user
+        user.set_password(self.validated_data.get("new_password"))
+        user.save()
+        return user
+
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        return {"message":"Password changed successfully✅"}
 
 
 class PostSerializer(serializers.ModelSerializer):

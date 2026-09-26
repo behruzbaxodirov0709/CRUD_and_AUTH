@@ -1,6 +1,6 @@
 from django.shortcuts import render
 from .models import CustomUser, Post
-from .serializers import SignUpSerializer, LoginSerializer, ProfileUpdateSerializer, PasswordChangeSerializer, PostSerializer
+from .serializers import SignUpSerializer, LoginSerializer, ProfileUpdateSerializer, PasswordChangeSerializer, PostSerializer, ProfileSerializer
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -17,42 +17,59 @@ class SignUpView(APIView):
     def post(self, request):
         serializer = SignUpSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        validated_data = serializer.validated_data
-        validated_data.pop("confirmation_password")
-        CustomUser.objects.create_user(**validated_data)
+        serializer.save()
+        # validated_data = serializer.validated_data
+        # validated_data.pop("confirmation_password")
+        # CustomUser.objects.create_user(**validated_data)
 
         return Response(
-            data={
-                "message":"Successfully registered🎉",
-                "account":serializer.data
-            },
+            serializer.data,
+            # data={
+            #     "message":"Successfully registered🎉",
+            #     "account":serializer.data
+            # },
             status=status.HTTP_201_CREATED
         )
 
 
-class LoginView(APIView):
+class LoginView(APIView):   
     permission_classes=[AllowAny]
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
 
         serializer.is_valid(raise_exception=True)
 
-        username = serializer.validated_data.get("username")
-        password = serializer.validated_data.get("password")
+        # username = serializer.validated_data.get("username")
+        # password = serializer.validated_data.get("password")
 
-        user = authenticate(username=username, password=password)
+        # user = authenticate(username=username, password=password)
         
 
-        if user is None:
-            raise ValidationError("Username yoki password noto'g'ri")
+        # if user is None:
+        #     raise ValidationError("Username yoki password noto'g'ri")
+        
+        user = serializer.validated_data.get("user")
 
         token, created = Token.objects.get_or_create(user=user)
 
         return Response(
             data={
-                "message":"Logged in successfully🎉",
-                "user":LoginSerializer(user).data,
+                "message":"Tizimga muvaffaqiyatli kirdingiz🎉",
+                "user":user.username,
                 "token":token.key
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+class ProfileView(APIView):
+    def get(self, request):
+        serializer = ProfileSerializer(instance=request.user)
+
+        return Response(
+            data={
+                "message":"Profile fetched successfully✅",
+                "profile":serializer.data
             },
             status=status.HTTP_200_OK
         )
@@ -78,17 +95,28 @@ class PasswordChangeView(APIView):
         user = request.user
         serializer = PasswordChangeSerializer(data=request.data, context={"request":request})
         serializer.is_valid(raise_exception=True)
-        new_password = serializer.validated_data.get("new_password")
-        user.set_password(new_password)
+        # new_password = serializer.validated_data.get("new_password")
+        # user.set_password(new_password)
         user.save()
 
+        return Response(serializer.data)
+        # return Response(
+        #     data={
+        #         "message":"Password changed successfully✅"
+        #     },
+        #     status=status.HTTP_200_OK
+        # )
+
+
+class LogoutView(APIView):
+    def post(self, request):
+        Token.objects.get(user=request.user).delete()
         return Response(
             data={
-                "message":"Password changed successfully✅"
+                "message":"Tizimdan chiqdingiz"
             },
             status=status.HTTP_200_OK
         )
-
 
 
 class PostViewSet(viewsets.ModelViewSet):
